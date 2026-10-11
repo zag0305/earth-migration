@@ -32,6 +32,11 @@ kbd { font: 600 10px/1 var(--mono); padding: 3px 6px; border: 1px solid var(--li
 .ld-bar { margin: 40px auto 14px; height: 1px; background: rgba(159,216,255,.14); position: relative; overflow: hidden; }
 .ld-bar i { position: absolute; inset: 0 auto 0 0; width: 0%; background: linear-gradient(90deg, transparent, var(--ice)); box-shadow: 0 0 12px var(--ice); transition: width .5s ease; }
 .ld-status { font: 400 11px/1.6 var(--mono); color: var(--ice-dim); letter-spacing: .1em; min-height: 3.2em; }
+.ld-actions { margin-top: 18px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.ld-actions button { min-width: 118px; padding: 11px 16px; border: 1px solid rgba(159,216,255,.45); border-radius: 999px; background: rgba(65,120,190,.2); color: #eaf6ff; cursor: pointer; font: 600 12px/1 var(--hud); letter-spacing: .1em; }
+.ld-actions button:active { background: rgba(100,165,240,.32); }
+.ld-actions p { flex-basis: 100%; margin: 4px 0 0; color: rgba(228,241,255,.66); font: 500 12px/1.6 var(--hud); letter-spacing: .04em; }
+#loader.failed .ld-bar i { background: linear-gradient(90deg, transparent, #ff8f84); box-shadow: 0 0 12px rgba(255,100,90,.6); }
 
 /* ---------- letterbox ---------- */
 .bars::before, .bars::after { content: ''; position: fixed; left: 0; right: 0; height: 0; background: #000; z-index: 5; transition: height 1.6s cubic-bezier(.7,0,.2,1); pointer-events: none; }

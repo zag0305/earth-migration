@@ -272,7 +272,7 @@ export function buildEarthLayer({ T, models, Q, U, pbr = {}, renderer, milky }) 
 
   const earthUniforms = {
     uDay: { value: T.day }, uNight: { value: T.night }, uSurf: { value: T.surf }, uEng: { value: engTex }, uClouds: { value: T.clouds || T.surf },
-    uTexel: { value: new THREE.Vector2(1 / 4096, 1 / 2048) },
+    uTexel: { value: new THREE.Vector2(1 / (T.surf?.image?.width || 4096), 1 / (T.surf?.image?.height || 2048)) },
     uSun: U.uSunW, uSunI: U.uSunI, uKeyCol: U.uKeyCol, uFreeze: U.uFreeze, uPower: U.uPower, uTime: U.uTime, uThrustL, uCloud, uAmb: U.uAmb, uSteer: U.uSteer, uIgnite: U.uIgnite, uHeroL, uKey2: U.uKey2, uKey2I: U.uKey2I, uNightGain: U.uNightGain, uIgnAge: U.uIgnAge,
   };
   const earthVert = /* glsl */`

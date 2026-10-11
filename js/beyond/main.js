@@ -17,18 +17,20 @@ const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const TOUCH = matchMedia('(pointer: coarse)').matches;
 const MOBILE = TOUCH || Math.min(innerWidth, innerHeight) < 700;
+const MOBILE_LITE = MOBILE && params.get('full') !== '1';
 const WP = !!window.__WALLPAPER;            // running as a desktop wallpaper (Wallpaper Engine): no page UI, controlled by js/wallpaper
 // Quality tiers: only cost changes between them, never the look (same lights, materials, colour pipeline).
 // scale = render pixels per CSS pixel (capped by maxPx), msaa samples, shadow map size (0 = off) and refresh
 // interval, bloom mip levels, ray-march steps, and instance budgets.
 const TIERS = {
+  mobile: { scale: 0.55, maxPx: 0.65e6, msaa: 0, shadowMap: 0, shadowEvery: 0, bloomLevels: 3, fps: 30, engines: 600, hero: 20, volSteps: 8, atmoSteps: 5, atmoLight: 2, earthSeg: [112, 72], climbers: 3, steer: 36, ringSeg: 360, sats: 200, ships: 45, dust: 300, shards: 18, cme: 800, asteroids: 3500, kuiper: 4500, galaxy: 32000, localArm: 6000, hii: 160, dustLanes: 2200, mc: 900, ism: 350, nebSteps: 10, stars: 2500 },
   low: { scale: 0.75, maxPx: 1.2e6, msaa: 2, shadowMap: 0, shadowEvery: 0, bloomLevels: 5, fps: 30, engines: 1100, hero: 26, volSteps: 10, atmoSteps: 7, atmoLight: 3, earthSeg: [160, 100], climbers: 4, steer: 48, ringSeg: 720, sats: 500, ships: 90, dust: 600, shards: 30, cme: 2000, asteroids: 10000, kuiper: 12000, galaxy: 90000, localArm: 14000, hii: 450, dustLanes: 8000, mc: 3000, ism: 1000, nebSteps: 16, stars: 6000 },
   medium: { scale: 1.0, maxPx: 2.1e6, msaa: 4, shadowMap: 1024, shadowEvery: 2, bloomLevels: 6, fps: 30, engines: 1800, hero: 26, volSteps: 14, atmoSteps: 9, atmoLight: 4, earthSeg: [200, 128], climbers: 5, steer: 60, ringSeg: 1080, sats: 1000, ships: 180, dust: 1100, shards: 50, cme: 3500, asteroids: 20000, kuiper: 24000, galaxy: 200000, localArm: 28000, hii: 900, dustLanes: 16000, mc: 5500, ism: 2000, nebSteps: 18, stars: 9000 },
   high: { scale: 1.25, maxPx: 3.3e6, msaa: 4, shadowMap: 2048, shadowEvery: 1, bloomLevels: 7, fps: 60, engines: 2600, hero: 26, volSteps: 18, atmoSteps: 11, atmoLight: 6, earthSeg: [256, 160], climbers: 6, steer: 72, ringSeg: 1440, sats: 1500, ships: 260, dust: 1600, shards: 70, cme: 5000, asteroids: 30000, kuiper: 34000, galaxy: 300000, localArm: 40000, hii: 1300, dustLanes: 24000, mc: 8000, ism: 3000, nebSteps: 22, stars: 12000 },
   ultra: { scale: 1.5, maxPx: 5.0e6, msaa: 4, shadowMap: 2048, shadowEvery: 1, bloomLevels: 7, fps: 60, engines: 3000, hero: 26, volSteps: 22, atmoSteps: 12, atmoLight: 6, earthSeg: [320, 200], climbers: 6, steer: 72, ringSeg: 1440, sats: 1800, ships: 300, dust: 1800, shards: 80, cme: 6000, asteroids: 36000, kuiper: 40000, galaxy: 360000, localArm: 48000, hii: 1500, dustLanes: 28000, mc: 9000, ism: 3500, nebSteps: 24, stars: 12000 },
 };
-const TIER = TIERS[params.get('q')] ? params.get('q') : WP ? (TIERS[window.__WALLPAPER.quality] ? window.__WALLPAPER.quality : 'medium') : MOBILE ? 'low' : 'high';
-const LOW = TIER === 'low';
+const TIER = TIERS[params.get('q')] ? params.get('q') : WP ? (TIERS[window.__WALLPAPER.quality] ? window.__WALLPAPER.quality : 'medium') : MOBILE_LITE ? 'mobile' : MOBILE ? 'low' : 'high';
+const LOW = TIER === 'low' || TIER === 'mobile';
 const Q = { ...TIERS[TIER], tier: TIER };
 // on a desktop page the tier scale is a ceiling on the device's own pixel ratio; as a wallpaper it is the scale itself
 Q.dpr = WP ? Q.scale : Math.min(devicePixelRatio, Math.max(Q.scale, 1));
@@ -38,13 +40,24 @@ if (params.get('dpr')) { Q.dpr = +params.get('dpr'); Q.maxPx = Infinity; }
 // browser — the temporal stabiliser and MSAA keep edges clean, and the frame rate stays even
 const baseDpr = () => Math.min(Q.dpr, Math.sqrt(Q.maxPx / Math.max(innerWidth * innerHeight, 1)));
 if (TOUCH) document.body.classList.add('touch');
+if (MOBILE_LITE) document.body.classList.add('mobile-lite');
 
 /* ------------------------------------------------------------------ renderer */
 const canvas = $('gl');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false });
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false });
+} catch (e) {
+  showLoadError('当前浏览器无法启动 3D 画面，请在手机系统浏览器中打开。');
+  throw e;
+}
 renderer.setPixelRatio(baseDpr()); renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.shadowMap.enabled = true;   // always on (stable programs); a tier without shadows parks the map instead renderer.shadowMap.type = THREE.PCFSoftShadowMap;   // one fitted sun shadow (see earth.js)
+canvas.addEventListener('webglcontextlost', e => {
+  e.preventDefault();
+  showLoadError('手机暂时无法维持 3D 画面，请刷新重试。');
+}, false);
 
 /* ------------------------------------------------------------------ shared uniforms */
 const U = {
@@ -59,6 +72,28 @@ const status = (p, s) => { $('ld-fill').style.width = (p * 100).toFixed(0) + '%'
 const texLoader = new THREE.TextureLoader();
 const tex = (url, srgb) => new Promise(res => texLoader.load(url, t => { if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); res(t); }, undefined, () => res(null)));
 const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
+function showLoadError(message) {
+  const loader = $('loader');
+  if (!loader) return;
+  loader.classList.remove('done');
+  loader.classList.add('failed');
+  const label = $('ld-status');
+  if (label) { label.style.color = '#ffb0a8'; label.textContent = message; }
+  if (loader.querySelector('.ld-actions')) return;
+  const actions = document.createElement('div');
+  actions.className = 'ld-actions';
+  actions.innerHTML = '<button type="button" data-action="retry">刷新重试</button><button type="button" data-action="copy">复制链接</button><p>若在微信里仍无法进入，请点右上角“…”并选择“在浏览器打开”。</p>';
+  loader.querySelector('.ld-inner')?.append(actions);
+  actions.querySelector('[data-action="retry"]').addEventListener('click', () => location.reload());
+  actions.querySelector('[data-action="copy"]').addEventListener('click', async e => {
+    try { await navigator.clipboard.writeText(location.href); e.currentTarget.textContent = '已复制'; }
+    catch { e.currentTarget.textContent = '请长按地址栏复制'; }
+  });
+}
+const withStartupTimeout = promise => Promise.race([
+  promise,
+  new Promise((_, reject) => setTimeout(() => reject(new Error('STARTUP_TIMEOUT')), 30000)),
+]);
 
 let earth, solar, galaxy, pipe, keys, spinQ, dash = null;
 const layers = [
@@ -71,12 +106,21 @@ const master = new THREE.PerspectiveCamera(45, 1, 1e-9, 1e12);   // the art-AU c
 
 async function load() {
   status(0.04, 'CALIBRATING DEEP-SPACE OPTICS');
-  const [day, night, surf, cloudT, milky, starsBuf, issM, hubM] = await Promise.all([
+  const root = MOBILE_LITE ? 'assets/mobile/' : null;
+  const core = MOBILE_LITE ? [
+    tex(root + 'earth_day_1024.jpg', true), tex(root + 'earth_night_1024.jpg', true), tex(root + 'earth_surface_1024.jpg', false), tex(root + 'earth_clouds_1024.jpg', false),
+    new Promise(res => texLoader.load(root + 'milkyway_1024.jpg', t => { t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; res(t); }, undefined, () => res(null))),
+  ] : [
     tex('assets/planets/earth_day_4k.jpg', true), tex('assets/earth/earth_night_4096.jpg', true), tex('assets/earth/earth_bump_roughness_clouds_4096.jpg', false), tex('assets/planets/earth_clouds_4k.jpg', false),
     new Promise(res => texLoader.load('assets/sky/milkyway_4k.jpg', t => { t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; res(t); }, undefined, () => res(null))),
     fetch('assets/sky/stars.bin').then(r => r.ok ? r.arrayBuffer() : null).catch(() => null),
     loadModel('assets/models/iss.glb'), loadModel('assets/models/hubble.glb'),
-  ]);
+  ];
+  const loaded = await Promise.all(core);
+  const [day, night, surf, cloudT, milky] = loaded;
+  const starsBuf = MOBILE_LITE ? null : loaded[5];
+  const issM = MOBILE_LITE ? null : loaded[6];
+  const hubM = MOBILE_LITE ? null : loaded[7];
   status(0.45, 'PLOTTING THE ESCAPE TRAJECTORY'); await nextFrame();
   const models = { iss: issM && bakeModel(issM, 1, { byHeight: false }), hubble: hubM && bakeModel(hubM, 1, { byHeight: false }) };
   const choice = earthChoices();
@@ -85,20 +129,25 @@ async function load() {
   if (!day || !surf) throw new Error('Earth textures missing (assets/earth)');
   status(0.55, 'IGNITING 10,000 PLANETARY ENGINES'); await nextFrame();
   const ptex = {};
-  await Promise.all(['sun', 'mercury', 'venus:venus_atmosphere', 'mars', 'jupiter:jupiter_4k', 'saturn', 'uranus', 'neptune', 'pluto', 'eris', 'makemake', 'moon', 'ceres', 'haumea'].map(async k => {
-    const [key, file] = k.includes(':') ? k.split(':') : [k, k + '_2k'];
-    ptex[key] = await tex(`assets/planets/${file.endsWith('4k') ? file : file.endsWith('_2k') ? file : file + '_2k'}.jpg`, true);
-  }));
-  ptex.saturnRing = await new Promise(res => texLoader.load('assets/planets/saturn_ring.png', t => { t.colorSpace = THREE.SRGBColorSpace; res(t); }, undefined, () => res(null)));
+  if (!MOBILE_LITE) {
+    await Promise.all(['sun', 'mercury', 'venus:venus_atmosphere', 'mars', 'jupiter:jupiter_4k', 'saturn', 'uranus', 'neptune', 'pluto', 'eris', 'makemake', 'moon', 'ceres', 'haumea'].map(async k => {
+      const [key, file] = k.includes(':') ? k.split(':') : [k, k + '_2k'];
+      ptex[key] = await tex(`assets/planets/${file.endsWith('4k') ? file : file.endsWith('_2k') ? file : file + '_2k'}.jpg`, true);
+    }));
+    ptex.saturnRing = await new Promise(res => texLoader.load('assets/planets/saturn_ring.png', t => { t.colorSpace = THREE.SRGBColorSpace; res(t); }, undefined, () => res(null)));
+  }
   T.moon = ptex.moon; ptex.earth = day;
-  const pbrNames = ['metal_plate_02', 'painted_metal_shutter', 'blue_metal_plate'];
-  const pbrSets = await Promise.all(pbrNames.map(n => loadPBR('assets/textures', n)));
-  const pbr = Object.fromEntries(pbrNames.map((n, i) => [n, pbrSets[i]]));
+  let pbr = {};
+  if (!MOBILE_LITE) {
+    const pbrNames = ['metal_plate_02', 'painted_metal_shutter', 'blue_metal_plate'];
+    const pbrSets = await Promise.all(pbrNames.map(n => loadPBR('assets/textures', n)));
+    pbr = Object.fromEntries(pbrNames.map((n, i) => [n, pbrSets[i]]));
+  }
   earth = buildEarthLayer({ T, models, Q, U, pbr, renderer, milky }); L0.scene = earth.scene;
   status(0.68, 'CHARTING THE SOLAR SYSTEM'); await nextFrame();
   solar = buildSolarLayer({ Q, U, tex: ptex }); L1.scene = solar.scene;
   status(0.8, 'MAPPING FOUR HUNDRED BILLION STARS'); await nextFrame();
-  const [galTex, galImg] = await new Promise(res => texLoader.load('assets/sky/milkyway_top_2k.jpg', t => {
+  const [galTex, galImg] = MOBILE_LITE ? [null, null] : await new Promise(res => texLoader.load('assets/sky/milkyway_top_2k.jpg', t => {
     t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
     const c = document.createElement('canvas'); c.width = c.height = 512; const x = c.getContext('2d'); x.drawImage(t.image, 0, 0, 512, 512);
     res([t, { data: x.getImageData(0, 0, 512, 512).data, w: 512, h: 512 }]);
@@ -124,18 +173,21 @@ async function load() {
   solar.setTrack(pts);
   pipe = createPipeline(renderer, layers, Q);
   status(0.94, 'WARMING SHADERS');
-  // compile everything once so the first chapter doesn't stutter
+  // Desktop compiles every hidden programme up front. Mobile compiles only what is currently visible;
+  // forcing all shaders through a phone GPU here was another common source of an endless loader.
   frame(0, 0, true);
   // compile for the target the layers really draw into (HDR, no tone mapping, linear): programs depend on it, and
   // compiling for the canvas produced variants that were never used, while the real ones compiled mid-film
-  renderer.setRenderTarget(pipe.layerTarget);
-  for (const L of layers) if (L.scene) {        // every program, including objects first seen minutes in: no hitch on first appearance
-    const hidden = []; L.scene.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true; } });
-    renderer.compile(L.scene, L.cam);
-    for (const o of hidden) o.visible = false;
+  if (!MOBILE_LITE) {
+    renderer.setRenderTarget(pipe.layerTarget);
+    for (const L of layers) if (L.scene) {        // every program, including objects first seen minutes in: no hitch on first appearance
+      const hidden = []; L.scene.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+      renderer.compile(L.scene, L.cam);
+      for (const o of hidden) o.visible = false;
+    }
+    renderer.compile(earth.haze.scene, L0.cam);
+    renderer.setRenderTarget(null);
   }
-  renderer.compile(earth.haze.scene, L0.cam);
-  renderer.setRenderTarget(null);
   pipe.warm();
   await nextFrame();
   status(1, 'READY');
@@ -809,7 +861,7 @@ function loop(now) {
 (async () => {
   try {
     buildUIShell();
-    await load();
+    await (MOBILE_LITE ? withStartupTimeout(load()) : load());
     buildUI(); bindInput();
     // intro: a slow drift over the engine field behind the title
     dash = createDash({ app, S, cam, U, CHAPTERS, DURATION, WP, artToKmLog, fmt, fmtDist, fmtSpan, fmtLen, galCoords, regionAt, chapterAt, ART_PER_LY, SKY, tmpV: new THREE.Vector3() });
@@ -821,7 +873,8 @@ function loop(now) {
     requestAnimationFrame(t => { last = t; loop(t); });
   } catch (e) {
     console.error(e);
-    $('ld-status').style.color = '#ff8a8a'; $('ld-status').textContent = 'SYSTEM FAULT · ' + (e.message || e);
+    const timeout = e?.message === 'STARTUP_TIMEOUT';
+    showLoadError(timeout ? '加载时间过长，请检查网络后刷新重试。' : '3D 场景启动失败，请刷新重试。');
   }
 })();
 function buildUIShell() { /* markup lives in beyond.html */ }
